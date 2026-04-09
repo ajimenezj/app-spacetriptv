@@ -38,10 +38,16 @@ export async function getAdminStats() {
   }
 }
 
+// Classify sale: 1-4 donations = Normal, 5+ = Reseller
+function classifySale(row: { cant?: number }) {
+  const qty = Number(row.cant) || 0
+  return qty >= 5 ? 'Reseller' : 'Normal'
+}
+
 // ---- Sales Today ----
 export async function getSalesToday() {
   const td = today()
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from('ClientEmail')
     .select('BillNo, ClientEmail, PurchaseDate, webClient, amount, cant')
     .eq('is_paid', 1)
@@ -50,7 +56,7 @@ export async function getSalesToday() {
     .lte('PurchaseDate', td + 'T23:59:59')
     .order('PurchaseDate', { ascending: true })
 
-  return data || []
+  return (data || []).map(r => ({ ...r, saleType: classifySale(r) }))
 }
 
 // ---- Sales This Month ----
@@ -66,7 +72,7 @@ export async function getSalesMonth() {
     .lte('PurchaseDate', td + 'T23:59:59')
     .order('PurchaseDate', { ascending: false })
 
-  return data || []
+  return (data || []).map(r => ({ ...r, saleType: classifySale(r) }))
 }
 
 // ---- Activated Today ----
@@ -116,6 +122,31 @@ export async function getExpiringMonth() {
   return data || []
 }
 
+// ---- Expiring Next 20 Days (unified view) ----
+export async function getExpiringNext20Days() {
+  const td = today()
+  const future = new Date()
+  future.setDate(future.getDate() + 20)
+  const endDate = future.toISOString().split('T')[0]
+
+  const { data } = await supabase
+    .from('my_donation')
+    .select('BillNo, donationSerial, iptvServerName, macaddress, customerclient, dateEnd, iptv, status, inactive, admin_inactive, NPFS_Order_NO, donationId, donationClient')
+    .eq('status', 1)
+    .eq('inactive', 0)
+    .eq('admin_inactive', 0)
+    .gte('dateEnd', td)
+    .lte('dateEnd', endDate)
+    .order('dateEnd', { ascending: true })
+
+  return (data || []).map(r => {
+    const dEnd = new Date(r.dateEnd + 'T00:00:00')
+    const now = new Date(td + 'T00:00:00')
+    const daysLeft = Math.ceil((dEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    return { ...r, daysLeft }
+  })
+}
+
 // ---- Failed Payments ----
 export async function getFailedPayments() {
   const fom = firstOfMonth()
@@ -160,13 +191,34 @@ export async function getPendingPayments() {
 
 // ---- Renewed Donations ----
 export async function getRenewedDonations() {
-  const { data } = await supabase
+  // Try with processed column first, fallback without it
+  let { data, error } = await supabase
     .from('my_renewDonation')
-    .select('renew_id, donationSerial, donationDate, email, BillNo, comment')
+    .select('renew_id, donationSerial, donationDate, email, BillNo, comment, processed')
     .order('renew_id', { ascending: false })
     .limit(200)
 
+  if (error && error.code === '42703') {
+    // processed column doesn't exist yet, fetch without it
+    const res = await supabase
+      .from('my_renewDonation')
+      .select('renew_id, donationSerial, donationDate, email, BillNo, comment')
+      .order('renew_id', { ascending: false })
+      .limit(200)
+    data = (res.data || []).map(r => ({ ...r, processed: 0 }))
+  }
+
   return data || []
+}
+
+// ---- Mark renewals as processed ----
+export async function markRenewalsProcessed(renewIds: number[]) {
+  const { error } = await supabase
+    .from('my_renewDonation')
+    .update({ processed: 1 })
+    .in('renew_id', renewIds)
+
+  if (error) throw error
 }
 
 // ---- Changes Today ----
@@ -174,12 +226,39 @@ export async function getChangesToday() {
   const td = today()
   const { data } = await supabase
     .from('historicalofchange')
-    .select('NewCode, OldCode, modifdte, customerClient, macaddress')
+    .select('ChangeId, NewCode, OldCode, modifdte, customerClient, macaddress, donationId')
     .gte('modifdte', td + 'T00:00:00')
     .lte('modifdte', td + 'T23:59:59')
     .order('modifdte', { ascending: false })
 
-  return data || []
+  if (!data || data.length === 0) return []
+
+  // Enrich with donation details
+  const donationIds = [...new Set(data.map(r => r.donationId).filter(Boolean))]
+  let donationMap: Record<number, any> = {}
+
+  if (donationIds.length > 0) {
+    const { data: donations } = await supabase
+      .from('my_donation')
+      .select('donationId, donationSerial, donationClient, BillNo, iptvServerName, dateEnd')
+      .in('donationId', donationIds)
+
+    for (const d of donations || []) {
+      donationMap[d.donationId] = d
+    }
+  }
+
+  return data.map(r => {
+    const donation = donationMap[r.donationId] || {}
+    return {
+      ...r,
+      donationSerial: donation.donationSerial || '',
+      donationClient: donation.donationClient || '',
+      BillNo: donation.BillNo || '',
+      iptvServerName: donation.iptvServerName || '',
+      dateEnd: donation.dateEnd || '',
+    }
+  })
 }
 
 // ---- Reports (Sales summary by website) ----
