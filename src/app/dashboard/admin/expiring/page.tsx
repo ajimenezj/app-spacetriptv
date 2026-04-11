@@ -7,7 +7,8 @@ export default function ExpiringPage() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent">("idle");
+  const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [emailResult, setEmailResult] = useState<string>("");
 
   useEffect(() => {
     getExpiringNext20Days().then((d) => { setData(d); setLoading(false); });
@@ -27,27 +28,54 @@ export default function ExpiringPage() {
     else setSelected(new Set(data.map((_, i) => i)));
   }
 
-  function getSelectedEmails(): string[] {
-    const emails = new Set<string>();
+  function getSelectedRecipients() {
+    const recipients: { to: string; customerName: string; serial: string; dateEnd: string; daysLeft: number }[] = [];
     selected.forEach((idx) => {
-      const email = data[idx]?.donationClient;
-      if (email) emails.add(email);
+      const row = data[idx];
+      if (row?.donationClient) {
+        recipients.push({
+          to: row.donationClient,
+          customerName: row.customerclient || '',
+          serial: row.donationSerial || '',
+          dateEnd: row.dateEnd || '',
+          daysLeft: row.daysLeft || 0,
+        });
+      }
     });
-    return Array.from(emails);
+    return recipients;
   }
 
-  function handleSendReminders() {
-    const emails = getSelectedEmails();
-    if (emails.length === 0) return;
-    // Open default email client with mailto
-    const subject = encodeURIComponent("SpaceTripTV - Renewal Reminder");
-    const body = encodeURIComponent(
-      "Dear customer,\n\nThis is a friendly reminder that your SpaceTripTV subscription is about to expire.\n\nPlease renew your subscription to continue enjoying our service.\n\nBest regards,\nSpaceTripTV Team"
-    );
-    const mailto = `mailto:?bcc=${emails.join(",")}&subject=${subject}&body=${body}`;
-    window.open(mailto, "_blank");
-    setEmailStatus("sent");
-    setTimeout(() => setEmailStatus("idle"), 3000);
+  async function handleSendReminders() {
+    const recipients = getSelectedRecipients();
+    if (recipients.length === 0) return;
+
+    setEmailStatus("sending");
+    setEmailResult("");
+
+    try {
+      const res = await fetch("/api/email/send-reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipients }),
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        setEmailStatus("error");
+        setEmailResult(result.error || "Failed to send emails");
+        return;
+      }
+
+      setEmailStatus("sent");
+      setEmailResult(`Sent: ${result.sent}, Failed: ${result.failed}`);
+      if (result.sent > 0) {
+        setSelected(new Set());
+      }
+      setTimeout(() => { setEmailStatus("idle"); setEmailResult(""); }, 5000);
+    } catch (err) {
+      setEmailStatus("error");
+      setEmailResult(String(err));
+    }
   }
 
   function getDaysLeftBadge(days: number) {
@@ -90,7 +118,7 @@ export default function ExpiringPage() {
       </div>
 
       {/* Action bar */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <button onClick={toggleAll}
           className="px-3 py-1.5 rounded text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">
           {selected.size === data.length ? "Deselect All" : "Select All"}
@@ -99,11 +127,18 @@ export default function ExpiringPage() {
           <button onClick={handleSendReminders}
             disabled={emailStatus === "sending"}
             className="px-4 py-1.5 rounded text-sm font-medium bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50">
-            {emailStatus === "sent" ? "Email client opened!" : `Send Reminder (${getSelectedEmails().length} emails)`}
+            {emailStatus === "sending" ? "Sending..."
+              : emailStatus === "sent" ? "Sent!"
+              : `Send Reminder via SendGrid (${getSelectedRecipients().length})`}
           </button>
         )}
         {selected.size > 0 && (
           <span className="text-xs text-gray-500">{selected.size} selected</span>
+        )}
+        {emailResult && (
+          <span className={`text-xs ${emailStatus === "error" ? "text-red-600" : "text-green-600"}`}>
+            {emailResult}
+          </span>
         )}
       </div>
 

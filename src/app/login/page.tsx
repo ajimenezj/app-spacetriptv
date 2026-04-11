@@ -1,10 +1,11 @@
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; success?: string }>;
 }) {
   const params = await searchParams;
   const error = params.error;
+  const success = params.success;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
@@ -19,6 +20,11 @@ export default async function LoginPage({
 
           {/* Form */}
           <div className="px-6 py-8">
+            {success && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm">
+                {success}
+              </div>
+            )}
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
                 {error}
