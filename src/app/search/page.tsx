@@ -142,10 +142,10 @@ export default function PublicSearchPage() {
 
               <form onSubmit={handleSearch} className="space-y-4">
                 <input
-                  type="text"
+                  type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Route Client, Order ID or E-Mail"
+                  placeholder="Client E-Mail"
                   required
                   className="w-full px-4 py-3 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent"
                 />
@@ -153,7 +153,7 @@ export default function PublicSearchPage() {
                   type="text"
                   value={serial}
                   onChange={(e) => setSerial(e.target.value)}
-                  placeholder="Route  / Username"
+                  placeholder="Assigned Code / Route"
                   required
                   className="w-full px-4 py-3 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent"
                 />
