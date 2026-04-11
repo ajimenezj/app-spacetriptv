@@ -344,6 +344,78 @@ export async function processRefund(billNo: string) {
     .eq('BillNo', billNo)
 }
 
+// ---- Bulk search donations by serial codes ----
+export async function searchDonationsBulk(serials: string[]) {
+  // Supabase .in() has a limit, batch in groups of 50
+  const results: any[] = []
+  for (let i = 0; i < serials.length; i += 50) {
+    const batch = serials.slice(i, i + 50)
+    const { data } = await supabase
+      .from('my_donation')
+      .select('donationId, BillNo, donationSerial, donationClient, customerclient, iptvServerName, macaddress, dateBegin, dateEnd, status, inactive, admin_inactive, iptv, iptvCountryLock, iptvInternetProviderLock, client_id')
+      .in('donationSerial', batch)
+    if (data) results.push(...data)
+  }
+
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+
+  return results.map(d => {
+    const endDate = new Date(d.dateEnd + 'T00:00:00')
+    const daysLeft = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    const isActive = d.status === 1 && d.inactive === 0 && d.admin_inactive === 0
+    return {
+      ...d,
+      daysLeft,
+      statusText: isActive ? 'Active' : 'Inactive',
+    }
+  })
+}
+
+// ---- Admin search donations by single query (serial, email, bill) ----
+export async function adminSearchDonations(query: string) {
+  const q = query.trim()
+  if (!q) return []
+
+  // Try by serial
+  const { data: bySerial } = await supabase
+    .from('my_donation')
+    .select('donationId, BillNo, donationSerial, donationClient, customerclient, iptvServerName, macaddress, dateBegin, dateEnd, status, inactive, admin_inactive, iptv, client_id')
+    .ilike('donationSerial', `%${q}%`)
+    .limit(100)
+
+  if (bySerial && bySerial.length > 0) return enrichResults(bySerial)
+
+  // Try by client email
+  const { data: byEmail } = await supabase
+    .from('my_donation')
+    .select('donationId, BillNo, donationSerial, donationClient, customerclient, iptvServerName, macaddress, dateBegin, dateEnd, status, inactive, admin_inactive, iptv, client_id')
+    .ilike('donationClient', `%${q}%`)
+    .limit(100)
+
+  if (byEmail && byEmail.length > 0) return enrichResults(byEmail)
+
+  // Try by BillNo
+  const { data: byBill } = await supabase
+    .from('my_donation')
+    .select('donationId, BillNo, donationSerial, donationClient, customerclient, iptvServerName, macaddress, dateBegin, dateEnd, status, inactive, admin_inactive, iptv, client_id')
+    .ilike('BillNo', `%${q}%`)
+    .limit(100)
+
+  return enrichResults(byBill || [])
+}
+
+function enrichResults(data: any[]) {
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  return data.map(d => {
+    const endDate = new Date(d.dateEnd + 'T00:00:00')
+    const daysLeft = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    const isActive = d.status === 1 && d.inactive === 0 && d.admin_inactive === 0
+    return { ...d, daysLeft, statusText: isActive ? 'Active' : 'Inactive' }
+  })
+}
+
 // ---- All Active Donations (admin view, no client_id filter) ----
 export async function getAllActiveDonations() {
   const { data } = await supabase
