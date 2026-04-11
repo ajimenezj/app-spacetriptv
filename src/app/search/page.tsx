@@ -1,7 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
-interface RouteData {
+interface DonationData {
   donationId: number;
   serial: string;
   email: string;
@@ -16,12 +18,13 @@ interface RouteData {
   countries: { CountryCode: string; CountryName: string }[];
 }
 
-export default function PublicSearchPage() {
-  const [email, setEmail] = useState("");
-  const [serial, setSerial] = useState("");
+function SearchContent() {
+  const searchParams = useSearchParams();
+  const [email, setEmail] = useState(searchParams.get("email") || "");
+  const [serial, setSerial] = useState(searchParams.get("code") || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [route, setRoute] = useState<RouteData | null>(null);
+  const [donation, setDonation] = useState<DonationData | null>(null);
   const [successMsg, setSuccessMsg] = useState("");
 
   // MAC change state
@@ -38,7 +41,7 @@ export default function PublicSearchPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
-    setRoute(null);
+    setDonation(null);
     setSuccessMsg("");
 
     try {
@@ -54,7 +57,7 @@ export default function PublicSearchPage() {
         return;
       }
 
-      setRoute(data);
+      setDonation(data);
       setProviderLock(data.internetProviderLock);
       setCountryLock(data.countryLock);
       setNewMac(data.macAddress);
@@ -66,7 +69,7 @@ export default function PublicSearchPage() {
   }
 
   async function doAction(action: string, extra: Record<string, any> = {}) {
-    if (!route) return;
+    if (!donation) return;
     setActionLoading(true);
     setSuccessMsg("");
     setError("");
@@ -77,9 +80,9 @@ export default function PublicSearchPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action,
-          donationId: route.donationId,
-          email: route.email,
-          serial: route.serial,
+          donationId: donation.donationId,
+          email: donation.email,
+          serial: donation.serial,
           ...extra,
         }),
       });
@@ -92,12 +95,11 @@ export default function PublicSearchPage() {
 
       setSuccessMsg(data.message);
 
-      // Update local state
       if (action === "changePortal" && data.portal) {
-        setRoute({ ...route, portal: data.portal });
+        setDonation({ ...donation, portal: data.portal });
       }
       if (action === "changeMac" && data.macAddress) {
-        setRoute({ ...route, macAddress: data.macAddress });
+        setDonation({ ...donation, macAddress: data.macAddress });
         setShowMacForm(false);
       }
     } catch {
@@ -108,7 +110,7 @@ export default function PublicSearchPage() {
   }
 
   function handleBackToSearch() {
-    setRoute(null);
+    setDonation(null);
     setSuccessMsg("");
     setError("");
     setShowMacForm(false);
@@ -127,11 +129,11 @@ export default function PublicSearchPage() {
 
       <div className="flex items-start justify-center px-4 pt-10 pb-20">
         <div className="w-full max-w-2xl">
-          {/* No route yet - show search form */}
-          {!route && (
+          {/* No donation yet - show search form */}
+          {!donation && (
             <div className="bg-white rounded-lg shadow-lg p-8">
               <h1 className="text-2xl font-light text-center text-gray-600 mb-8">
-                IPTV Reset &amp; Route Checker
+                IPTV Reset &amp; Donation Checker
               </h1>
 
               {error && (
@@ -153,14 +155,14 @@ export default function PublicSearchPage() {
                   type="text"
                   value={serial}
                   onChange={(e) => setSerial(e.target.value)}
-                  placeholder="Assigned Code / Route"
+                  placeholder="Assigned Code"
                   required
                   className="w-full px-4 py-3 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent"
                 />
 
-                <div className="text-sm text-blue-600 hover:underline cursor-pointer">
-                  Forgot your route?
-                </div>
+                <a href="/search/order" className="block text-sm text-blue-600 hover:underline cursor-pointer">
+                  Forgot your donation code?
+                </a>
 
                 <div className="flex items-center justify-between pt-2">
                   <a href="/login" className="text-sm text-gray-600 hover:underline">
@@ -171,21 +173,21 @@ export default function PublicSearchPage() {
                     disabled={loading}
                     className="px-6 py-2.5 bg-orange-400 text-white rounded hover:bg-orange-500 transition-colors font-medium text-sm disabled:opacity-50"
                   >
-                    {loading ? "Searching..." : "Search Route"}
+                    {loading ? "Searching..." : "Search Donation"}
                   </button>
                 </div>
               </form>
             </div>
           )}
 
-          {/* Route found - show details */}
-          {route && (
+          {/* Donation found - show details */}
+          {donation && (
             <div className="bg-white rounded-lg shadow-lg p-8">
               <h1 className="text-2xl font-light text-center text-gray-500 mb-2">
-                IPTV Reset &amp; Route Checker
+                IPTV Reset &amp; Donation Checker
               </h1>
               <h2 className="text-center text-blue-600 font-semibold mb-1">
-                Hello, here is your Route details:
+                Hello, here is your Donation details:
               </h2>
 
               {error && (
@@ -255,7 +257,7 @@ export default function PublicSearchPage() {
                 </div>
               )}
 
-              {/* Route details table */}
+              {/* Donation details table */}
               <table className="w-full border-collapse">
                 <tbody>
                   <tr className="border-b border-gray-200">
@@ -265,9 +267,9 @@ export default function PublicSearchPage() {
                     </td>
                   </tr>
                   <tr className="border-b border-gray-200">
-                    <td className="py-3 px-4 font-bold text-center text-gray-700">Route:#</td>
+                    <td className="py-3 px-4 font-bold text-center text-gray-700">Donation:#</td>
                     <td className="py-3 px-4 text-center">
-                      <span className="text-red-600 font-semibold">{route.serial}</span>
+                      <span className="text-red-600 font-semibold">{donation.serial}</span>
                       <br />
                       <span className="text-sm text-gray-400">Generate New One</span>
                     </td>
@@ -275,33 +277,31 @@ export default function PublicSearchPage() {
                   <tr className="border-b border-gray-200">
                     <td className="py-3 px-4 font-bold text-center text-blue-700">IPTV Portal:</td>
                     <td className="py-3 px-4 text-center">
-                      <span className="text-blue-600 font-semibold">{route.portal}</span>
+                      <span className="text-blue-600 font-semibold">{donation.portal}</span>
                       <br />
                       <span className="text-xs text-red-500">
                         If the default IPTV Portal URL doesn&apos;t work please try the full version{" "}
-                        <a href={`http://${route.portal}/c/index.html`} className="text-blue-600 underline" target="_blank" rel="noopener">
-                          http://{route.portal}/c/index.html
+                        <a href={`http://${donation.portal}/c/index.html`} className="text-blue-600 underline" target="_blank" rel="noopener">
+                          http://{donation.portal}/c/index.html
                         </a>
                       </span>
                     </td>
                   </tr>
                   <tr className="border-b border-gray-200">
                     <td className="py-3 px-4 font-bold text-center text-green-700">Status:</td>
-                    <td className="py-3 px-4 text-center font-semibold">
-                      {route.status}
-                    </td>
+                    <td className="py-3 px-4 text-center font-semibold">{donation.status}</td>
                   </tr>
                   <tr className="border-b border-gray-200">
                     <td className="py-3 px-4 font-bold text-center text-gray-700">Ban Count:</td>
-                    <td className="py-3 px-4 text-center">{route.banCount} Of {route.maxBans}</td>
+                    <td className="py-3 px-4 text-center">{donation.banCount} Of {donation.maxBans}</td>
                   </tr>
                   <tr className="border-b border-gray-200">
                     <td className="py-3 px-4 font-bold text-center text-red-700">Remaining days:</td>
-                    <td className="py-3 px-4 text-center font-semibold">{route.remainingDays} days</td>
+                    <td className="py-3 px-4 text-center font-semibold">{donation.remainingDays} days</td>
                   </tr>
                   <tr className="border-b border-gray-200">
                     <td className="py-3 px-4 font-bold text-center text-blue-700">Mac Address:</td>
-                    <td className="py-3 px-4 text-center text-blue-600">{route.macAddress || "Not set"}</td>
+                    <td className="py-3 px-4 text-center text-blue-600">{donation.macAddress || "Not set"}</td>
                   </tr>
                   <tr className="border-b border-gray-200">
                     <td className="py-3 px-4 font-bold text-center text-gray-700">Official Applications</td>
@@ -311,52 +311,36 @@ export default function PublicSearchPage() {
                       </span>
                     </td>
                   </tr>
-
-                  {/* Internet Provider Lock */}
                   <tr className="border-b border-gray-200">
                     <td className="py-3 px-4 font-bold text-center text-blue-800">Internet Provider Lock</td>
                     <td className="py-3 px-4 text-center">
-                      <select
-                        value={providerLock}
-                        onChange={(e) => setProviderLock(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded text-sm w-full max-w-xs"
-                      >
+                      <select value={providerLock} onChange={(e) => setProviderLock(e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded text-sm w-full max-w-xs">
                         <option value="Enabled">Enabled</option>
                         <option value="Disabled">Disabled</option>
                       </select>
                       <br />
-                      <button
-                        onClick={() => doAction("internetProviderLock", { enabled: providerLock === "Enabled" })}
+                      <button onClick={() => doAction("internetProviderLock", { enabled: providerLock === "Enabled" })}
                         disabled={actionLoading}
-                        className="mt-2 px-4 py-1.5 bg-gray-800 text-white rounded text-sm hover:bg-gray-900 disabled:opacity-50"
-                      >
+                        className="mt-2 px-4 py-1.5 bg-gray-800 text-white rounded text-sm hover:bg-gray-900 disabled:opacity-50">
                         Apply
                       </button>
                     </td>
                   </tr>
-
-                  {/* Country Lock */}
                   <tr className="border-b border-gray-200">
                     <td className="py-3 px-4 font-bold text-center text-blue-800">Country Lock</td>
                     <td className="py-3 px-4 text-center">
-                      <select
-                        value={countryLock}
-                        onChange={(e) => setCountryLock(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded text-sm w-full max-w-xs"
-                      >
+                      <select value={countryLock} onChange={(e) => setCountryLock(e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded text-sm w-full max-w-xs">
                         <option value="All">Allow All Countries</option>
-                        {route.countries.map((c) => (
-                          <option key={c.CountryCode} value={c.CountryCode}>
-                            {c.CountryName}
-                          </option>
+                        {donation.countries.map((c) => (
+                          <option key={c.CountryCode} value={c.CountryCode}>{c.CountryName}</option>
                         ))}
                       </select>
                       <br />
-                      <button
-                        onClick={() => doAction("countryLock", { country: countryLock })}
+                      <button onClick={() => doAction("countryLock", { country: countryLock })}
                         disabled={actionLoading}
-                        className="mt-2 px-4 py-1.5 bg-gray-800 text-white rounded text-sm hover:bg-gray-900 disabled:opacity-50"
-                      >
+                        className="mt-2 px-4 py-1.5 bg-gray-800 text-white rounded text-sm hover:bg-gray-900 disabled:opacity-50">
                         Apply
                       </button>
                     </td>
@@ -364,18 +348,23 @@ export default function PublicSearchPage() {
                 </tbody>
               </table>
 
-              {/* Footer links */}
               <div className="mt-6 text-center text-sm text-gray-600">
                 <a href="/login" className="hover:underline">Back to Login</a>
                 <span className="mx-2 text-orange-500">Or</span>
-                <button onClick={handleBackToSearch} className="hover:underline text-gray-600">
-                  Back to Search
-                </button>
+                <button onClick={handleBackToSearch} className="hover:underline text-gray-600">Back to Search</button>
               </div>
             </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PublicSearchPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-200 flex items-center justify-center">Loading...</div>}>
+      <SearchContent />
+    </Suspense>
   );
 }
